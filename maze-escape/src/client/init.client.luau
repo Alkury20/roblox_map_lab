@@ -25,10 +25,12 @@ local MazeController    = Logger.requireModule(TAG, Client.Controllers.MazeContr
 local EffectController  = Logger.requireModule(TAG, Client.Controllers.EffectController)
 local InputController   = Logger.requireModule(TAG, Client.Controllers.InputController)
 local AdminController   = Logger.requireModule(TAG, Client.Controllers.AdminController)
+local TutorialController = Logger.requireModule(TAG, Client.Controllers.TutorialController)
 
 -- Load UI modules
 local MainGui           = Logger.requireModule(TAG, Client.UI.MainGui)
 local ShopGui           = Logger.requireModule(TAG, Client.UI.ShopGui)
+local BonusGui          = Logger.requireModule(TAG, Client.UI.BonusGui)
 local QuestGui          = Logger.requireModule(TAG, Client.UI.QuestGui)
 local LeaderboardGui    = Logger.requireModule(TAG, Client.UI.LeaderboardGui)
 local NotificationGui   = Logger.requireModule(TAG, Client.UI.NotificationGui)
@@ -54,6 +56,7 @@ local function init()
 	Logger.debug(TAG, "Initializing UI...")
 	MainGui.init(playerData)
 	ShopGui.init(playerData)
+	BonusGui.init(playerData)
 	QuestGui.init(playerData)
 	LeaderboardGui.init()
 	NotificationGui.init()
@@ -65,12 +68,16 @@ local function init()
 	EffectController.init(playerData)
 	InputController.init()
 	AdminController.init()
+	TutorialController.init(playerData)
 
 	-- Data update listener
 	Remotes:WaitForChild(RemoteDefs.DataUpdated).OnClientEvent:Connect(function(newData)
 		playerData = newData
 		MainGui.updateData(newData)
+		ShopGui.onDataUpdated(newData)
+		BonusGui.onDataUpdated(newData)
 		EffectController.onDataUpdated(newData)
+		TutorialController.onDataUpdated(newData)
 	end)
 
 	-- Notification listener
@@ -98,12 +105,14 @@ local function init()
 		)
 		MazeController.onMazeLoaded(mazeInfo)
 		MainGui.onMazeLoaded(mazeInfo)
+		TutorialController.onMazeLoaded(mazeInfo)
 	end)
 
 	Remotes:WaitForChild(RemoteDefs.HubEntered).OnClientEvent:Connect(function()
 		Logger.info(TAG, "Entered hub")
 		MazeController.onHubEntered()
 		MainGui.onHubEntered()
+		TutorialController.onHubEntered()
 	end)
 
 	Logger.info(TAG, "Client ready for", localPlayer.Name)

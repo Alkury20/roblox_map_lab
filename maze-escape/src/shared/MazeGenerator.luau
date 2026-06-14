@@ -2,6 +2,8 @@
 -- Procedural maze generation using Recursive Backtracker (DFS)
 -- Guarantees a valid path from start to exit.
 
+local BonusShapes = require(script.Parent.BonusShapes)
+
 local MazeGenerator = {}
 
 type Cell = {
@@ -9,6 +11,7 @@ type Cell = {
 	y: number,
 	walls: { north: boolean, south: boolean, east: boolean, west: boolean },
 	visited: boolean,
+	blocked: boolean,
 	isSecretRoom: boolean,
 	hasCheckpoint: boolean,
 	hasCoin: boolean,
@@ -38,6 +41,7 @@ local function createCell(x: number, y: number): Cell
 		y = y,
 		walls = { north = true, south = true, east = true, west = true },
 		visited = false,
+		blocked = false,
 		isSecretRoom = false,
 		hasCheckpoint = false,
 		hasCoin = false,
@@ -61,7 +65,8 @@ local function carve(cells: { { Cell } }, x: number, y: number, width: number, h
 	for _, di in ipairs(dirs) do
 		local d = DIRECTIONS[di]
 		local nx, ny = x + d.dx, y + d.dy
-		if nx >= 1 and nx <= width and ny >= 1 and ny <= height and not cells[ny][nx].visited then
+		if nx >= 1 and nx <= width and ny >= 1 and ny <= height
+			and not cells[ny][nx].visited and not cells[ny][nx].blocked then
 			cells[y][x].walls[d.wall] = false
 			cells[ny][nx].walls[d.opposite] = false
 			carve(cells, nx, ny, width, height, rng)
@@ -75,6 +80,7 @@ local function findDeadEnds(cells: { { Cell } }, width: number, height: number):
 	for y = 1, height do
 		for x = 1, width do
 			local cell = cells[y][x]
+			if cell.blocked then continue end
 			local wallCount = 0
 			for _, v in pairs(cell.walls) do
 				if v then wallCount += 1 end
@@ -87,12 +93,14 @@ local function findDeadEnds(cells: { { Cell } }, width: number, height: number):
 	return deadEnds
 end
 
-function MazeGenerator.generate(width: number, height: number, seed: number?): MazeData
+function MazeGenerator.generate(width: number, height: number, seed: number?, options: { useCheckpoints: boolean?, shape: string? }?)
 	-- Ensure odd dimensions for proper maze structure
 	if width % 2 == 0 then width += 1 end
 	if height % 2 == 0 then height += 1 end
 
 	local rng = Random.new(seed or os.clock())
+	local useCheckpoints = options == nil or options.useCheckpoints ~= false
+	local shape = options and options.shape or nil
 
 	-- Initialize grid
 	local cells: { { Cell } } = {}
@@ -103,15 +111,63 @@ function MazeGenerator.generate(width: number, height: number, seed: number?): M
 		end
 	end
 
-	-- Generate maze from top-left
-	carve(cells, 1, 1, width, height, rng)
+	local wobbleSeed = rng:NextNumber() * (2 * math.pi)
+	local mask = shape and BonusShapes.buildMask(shape, width, height, wobbleSeed) or nil
+	if mask then
+		for y = 1, height do
+			for x = 1, width do
+				if not mask[y][x] then
+					cells[y][x].blocked = true
+					cells[y][x].visited = true
+				end
+			end
+		end
+	end
 
-	-- Start: top-left, Exit: bottom-right
 	local startPos = { x = 1, y = 1 }
 	local exitPos  = { x = width, y = height }
+	if mask then
+		startPos, exitPos = BonusShapes.findStartExit(mask, width, height)
+	end
 
-	-- Open the exit wall
-	cells[height][width].walls.south = false
+	-- Generate maze; retry if shape leaves no valid path
+	local mazeData
+	for attempt = 1, 8 do
+		if attempt > 1 then
+			for y = 1, height do
+				for x = 1, width do
+					local cell = cells[y][x]
+					if not cell.blocked then
+						cell.walls = { north = true, south = true, east = true, west = true }
+						cell.visited = false
+						cell.isSecretRoom = false
+						cell.hasCheckpoint = false
+						cell.hasCoin = false
+					end
+				end
+			end
+		end
+
+		carve(cells, startPos.x, startPos.y, width, height, rng)
+		cells[exitPos.y][exitPos.x].walls.south = false
+
+		mazeData = {
+			width        = width,
+			height       = height,
+			cells        = cells,
+			startPos     = startPos,
+			exitPos      = exitPos,
+			secretRooms  = {},
+			checkpoints  = {},
+			coinPositions = {},
+			shape        = shape,
+			wobbleSeed   = wobbleSeed,
+		}
+
+		if MazeGenerator.findPath(mazeData, startPos.x, startPos.y) then
+			break
+		end
+	end
 
 	-- Find dead ends for placement
 	local deadEnds = findDeadEnds(cells, width, height)
@@ -138,19 +194,22 @@ function MazeGenerator.generate(width: number, height: number, seed: number?): M
 		table.insert(secretRooms, { x = de.x, y = de.y })
 	end
 
-	-- Place checkpoints (spread evenly, every ~10 cells along path)
+	-- Place checkpoints (only on dangerous worlds)
 	local checkpoints = {}
-	local checkpointInterval = math.floor((width * height) / 8)
-	local cpCount = 0
-	for y = 1, height do
-		for x = 1, width do
-			cpCount += 1
-			if cpCount % checkpointInterval == 0 then
-				if not cells[y][x].isSecretRoom
-					and not (x == startPos.x and y == startPos.y)
-					and not (x == exitPos.x and y == exitPos.y) then
-					cells[y][x].hasCheckpoint = true
-					table.insert(checkpoints, { x = x, y = y })
+	if useCheckpoints then
+		local checkpointInterval = math.max(4, math.floor((width * height) / 8))
+		local cpCount = 0
+		for y = 1, height do
+			for x = 1, width do
+				if cells[y][x].blocked then continue end
+				cpCount += 1
+				if cpCount % checkpointInterval == 0 then
+					if not cells[y][x].isSecretRoom
+						and not (x == startPos.x and y == startPos.y)
+						and not (x == exitPos.x and y == exitPos.y) then
+						cells[y][x].hasCheckpoint = true
+						table.insert(checkpoints, { x = x, y = y })
+					end
 				end
 			end
 		end
@@ -161,6 +220,7 @@ function MazeGenerator.generate(width: number, height: number, seed: number?): M
 	for y = 1, height do
 		for x = 1, width do
 			local cell = cells[y][x]
+			if cell.blocked then continue end
 			if not cell.isSecretRoom and not cell.hasCheckpoint
 				and not (x == startPos.x and y == startPos.y)
 				and not (x == exitPos.x and y == exitPos.y)
@@ -171,16 +231,11 @@ function MazeGenerator.generate(width: number, height: number, seed: number?): M
 		end
 	end
 
-	return {
-		width        = width,
-		height       = height,
-		cells        = cells,
-		startPos     = startPos,
-		exitPos      = exitPos,
-		secretRooms  = secretRooms,
-		checkpoints  = checkpoints,
-		coinPositions = coinPositions,
-	}
+	mazeData.secretRooms = secretRooms
+	mazeData.checkpoints = checkpoints
+	mazeData.coinPositions = coinPositions
+
+	return mazeData
 end
 
 -- BFS path validation (used for hint system)
@@ -213,11 +268,13 @@ function MazeGenerator.findPath(mazeData: MazeData, fromX: number, fromY: number
 		for _, d in ipairs(DIRECTIONS) do
 			if not cell.walls[d.wall] then
 				local nx, ny = cur.x + d.dx, cur.y + d.dy
-				local k = key(nx, ny)
-				if not visited[k] then
-					visited[k] = true
-					prev[k] = cur
-					table.insert(queue, { x = nx, y = ny })
+				if nx >= 1 and nx <= width and ny >= 1 and ny <= height and not cells[ny][nx].blocked then
+					local k = key(nx, ny)
+					if not visited[k] then
+						visited[k] = true
+						prev[k] = cur
+						table.insert(queue, { x = nx, y = ny })
+					end
 				end
 			end
 		end

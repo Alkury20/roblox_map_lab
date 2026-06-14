@@ -114,6 +114,10 @@ function NotificationGui.show(data)
 		NotificationGui.showUnlockPrompt(data)
 		return
 	end
+	if data.action == "promptBonusUnlock" then
+		NotificationGui.showBonusPrompt(data)
+		return
+	end
 	table.insert(notifQueue, data)
 	showNext()
 end
@@ -289,6 +293,139 @@ function NotificationGui.showUnlockPrompt(data)
 			statusLabel.Text = "Purchase cancelled."
 		end
 	end)
+end
+
+function NotificationGui.showBonusPrompt(data)
+	local ReplicatedStorage = game:GetService("ReplicatedStorage")
+	local RunService = game:GetService("RunService")
+	local RemoteDefs = require(ReplicatedStorage.Shared.RemoteDefinitions)
+	local Remotes = ReplicatedStorage:WaitForChild("Remotes")
+
+	local screenGui = localPlayer.PlayerGui:WaitForChild("MazeEscapeGui")
+	local old = screenGui:FindFirstChild("BonusUnlockPopup")
+	if old then old:Destroy() end
+
+	local bonusId = data.bonusId or "circle"
+	local bonusName = data.bonusName or "Bonus"
+	local runCost = data.runCost or 30
+	local unlockCost = data.unlockCost or 300
+
+	local overlay = Instance.new("Frame")
+	overlay.Name = "BonusUnlockPopup"
+	overlay.Size = UDim2.new(1, 0, 1, 0)
+	overlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+	overlay.BackgroundTransparency = 0.45
+	overlay.ZIndex = 60
+	overlay.Parent = screenGui
+
+	local panel = Instance.new("Frame")
+	panel.Size = UDim2.new(0, 340, 0, 280)
+	panel.Position = UDim2.new(0.5, -170, 0.5, -140)
+	panel.BackgroundColor3 = C.Background
+	panel.ZIndex = 61
+	panel.BorderSizePixel = 0
+	panel.Parent = overlay
+	corner(panel, 16)
+
+	local stroke = Instance.new("UIStroke")
+	stroke.Color = Color3.fromRGB(160, 100, 220)
+	stroke.Thickness = 2
+	stroke.Parent = panel
+
+	local title = Instance.new("TextLabel")
+	title.Text = (data.icon or "⭐") .. " " .. bonusName
+	title.Size = UDim2.new(1, -20, 0, 40)
+	title.Position = UDim2.new(0, 10, 0, 12)
+	title.BackgroundTransparency = 1
+	title.TextColor3 = Color3.fromRGB(220, 180, 255)
+	title.Font = Enum.Font.GothamBold
+	title.TextSize = 18
+	title.ZIndex = 62
+	title.Parent = panel
+
+	local desc = Instance.new("TextLabel")
+	desc.Text = data.text or "Платный бонусный уровень."
+	desc.Size = UDim2.new(1, -20, 0, 44)
+	desc.Position = UDim2.new(0, 10, 0, 52)
+	desc.BackgroundTransparency = 1
+	desc.TextColor3 = C.TextMuted
+	desc.Font = Enum.Font.Gotham
+	desc.TextSize = 13
+	desc.TextWrapped = true
+	desc.ZIndex = 62
+	desc.Parent = panel
+
+	local statusLabel = Instance.new("TextLabel")
+	statusLabel.Text = ""
+	statusLabel.Size = UDim2.new(1, -20, 0, 24)
+	statusLabel.Position = UDim2.new(0, 10, 0, 98)
+	statusLabel.BackgroundTransparency = 1
+	statusLabel.TextColor3 = C.Danger
+	statusLabel.Font = Enum.Font.Gotham
+	statusLabel.TextSize = 12
+	statusLabel.ZIndex = 62
+	statusLabel.Parent = panel
+
+	local function makeBtn(text, color, yPos)
+		local btn = Instance.new("TextButton")
+		btn.Text = text
+		btn.Size = UDim2.new(1, -40, 0, 44)
+		btn.Position = UDim2.new(0, 20, 0, yPos)
+		btn.BackgroundColor3 = color
+		btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+		btn.Font = Enum.Font.GothamBold
+		btn.TextSize = 15
+		btn.BorderSizePixel = 0
+		btn.ZIndex = 62
+		btn.Parent = panel
+		corner(btn, 10)
+		return btn
+	end
+
+	local playBtn = makeBtn("▶ Играть (" .. runCost .. " 🪙)", C.Accent, 128)
+	if not data.canAffordRun then
+		playBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+	end
+	playBtn.MouseButton1Click:Connect(function()
+		local ok, msg = Remotes:WaitForChild(RemoteDefs.StartBonusLevel):InvokeServer(bonusId)
+		if ok then
+			overlay:Destroy()
+		else
+			statusLabel.Text = tostring(msg)
+		end
+	end)
+
+	local unlockBtn = makeBtn("🔓 Разблокировать (" .. unlockCost .. " 🪙)", Color3.fromRGB(50, 160, 80), 182)
+	if not data.canAffordUnlock then
+		unlockBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+	end
+	unlockBtn.MouseButton1Click:Connect(function()
+		local ok, msg = Remotes:WaitForChild(RemoteDefs.UnlockBonusLevel):InvokeServer(bonusId)
+		if ok then
+			overlay:Destroy()
+		else
+			if RunService:IsStudio() then
+				local studioOk = Remotes:WaitForChild(RemoteDefs.UnlockBonusStudioTest):InvokeServer(bonusId)
+				if studioOk then
+					overlay:Destroy()
+					return
+				end
+			end
+			statusLabel.Text = tostring(msg)
+		end
+	end)
+
+	local closeBtn = Instance.new("TextButton")
+	closeBtn.Text = "Отмена"
+	closeBtn.Size = UDim2.new(0, 80, 0, 28)
+	closeBtn.Position = UDim2.new(0.5, -40, 1, -36)
+	closeBtn.BackgroundTransparency = 1
+	closeBtn.TextColor3 = C.TextMuted
+	closeBtn.Font = Enum.Font.Gotham
+	closeBtn.TextSize = 13
+	closeBtn.ZIndex = 62
+	closeBtn.Parent = panel
+	closeBtn.MouseButton1Click:Connect(function() overlay:Destroy() end)
 end
 
 function NotificationGui.showAchievement(achievement)

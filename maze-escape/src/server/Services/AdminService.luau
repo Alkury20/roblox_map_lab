@@ -13,20 +13,51 @@ local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 
 local AdminService = {}
 
-local adminSpeed: { [number]: number } = {} -- userId -> custom walk speed
+local adminSpeed: { [number]: number } = {}
 local adminFlying: { [number]: boolean } = {}
+local adminUserIds: { [number]: boolean } = {}
+
+local function registerAdminId(userId: number, source: string?)
+	if userId and userId > 0 then
+		adminUserIds[userId] = true
+		if source then
+			Logger.info(TAG, "Admin registered", "userId=" .. userId, "via=" .. source)
+		end
+	end
+end
+
+local function loadAdminList()
+	table.clear(adminUserIds)
+
+	for _, userId in ipairs(Constants.ADMIN_USER_IDS or {}) do
+		registerAdminId(userId, "ADMIN_USER_IDS")
+	end
+
+	local names = Constants.ADMIN_USERNAMES
+	if names and #names > 0 then
+		for _, username in ipairs(names) do
+			local ok, userId = pcall(function()
+				return Players:GetUserIdFromNameAsync(username)
+			end)
+			if ok and typeof(userId) == "number" and userId > 0 then
+				registerAdminId(userId, "username:" .. username)
+			else
+				Logger.warn(TAG, "Admin username not found", username)
+			end
+		end
+	end
+
+	local count = 0
+	for _ in pairs(adminUserIds) do
+		count += 1
+	end
+	Logger.info(TAG, "Admin list loaded", "entries=" .. count)
+end
 
 local function isAdmin(player: Player): boolean
 	if not player then return false end
 	if player.UserId == game.CreatorId then return true end
-
-	for _, userId in ipairs(Constants.ADMIN_USER_IDS) do
-		if player.UserId == userId then
-			return true
-		end
-	end
-
-	return false
+	return adminUserIds[player.UserId] == true
 end
 
 local function applySpeed(player: Player)
@@ -50,8 +81,9 @@ local function syncAttributes(player: Player)
 end
 
 function AdminService.init()
-	Remotes:WaitForChild(RemoteDefs.CheckAdmin).OnServerInvoke = function(player)
-		local admin = isAdmin(player)
+	loadAdminList()
+
+	Remotes:WaitForChild(RemoteDefs.CheckAdmin).OnServerInvoke = function(player)		local admin = isAdmin(player)
 		if admin then
 			syncAttributes(player)
 			Logger.info(TAG, "Admin panel access", player.Name)

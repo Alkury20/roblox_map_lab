@@ -22,13 +22,11 @@
       0,
       1
     ],
-    "Color3uint8": {
-      "Color3uint8": [
-        32,
-        35,
-        52
-      ]
-    },
+    "Color": [
+      0.12549019607843137,
+      0.13725490196078433,
+      0.20392156862745098
+    ],
     "Material": "Concrete",
     "CanCollide": true,
     "TopSurface": "Smooth",

@@ -22,13 +22,11 @@
       0,
       1
     ],
-    "Color3uint8": {
-      "Color3uint8": [
-        220,
-        60,
-        20
-      ]
-    },
+    "Color": [
+      0.8627450980392157,
+      0.23529411764705882,
+      0.0784313725490196
+    ],
     "Material": "Neon",
     "CanCollide": false,
     "TopSurface": "Smooth",

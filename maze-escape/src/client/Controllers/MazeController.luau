@@ -9,6 +9,9 @@ local TweenService      = game:GetService("TweenService")
 
 local Constants  = require(ReplicatedStorage.Shared.Constants)
 local RemoteDefs = require(ReplicatedStorage.Shared.RemoteDefinitions)
+local Logger     = require(ReplicatedStorage.Shared.Logger)
+
+local TAG = "MazeController"
 
 local Remotes     = ReplicatedStorage:WaitForChild("Remotes")
 local localPlayer = Players.LocalPlayer
@@ -16,12 +19,21 @@ local localPlayer = Players.LocalPlayer
 local MazeController = {}
 
 local currentMazeInfo = nil
+local playerZone: "hub" | "maze" = "hub"
+local zoneConn: RBXScriptConnection? = nil
+local mazeWatchConn: RBXScriptConnection? = nil
+local savedCameraMode: Enum.CameraMode? = nil
+local savedCameraMinZoom: number? = nil
+local savedCameraMaxZoom: number? = nil
 local hintArrows: { BasePart } = {}
 local isSlippery = false
+local slipperyConn: RBXScriptConnection? = nil
+local slideVelocity = Vector3.zero
 local collectedCoins: { [string]: boolean } = {}
 local activatedCheckpoints: { [number]: boolean } = {}
 local foundSecrets: { [number]: boolean } = {}
 local lavaConnections: { RBXScriptConnection } = {}
+local lastLavaDamageTime = 0
 
 -- ─── Arrow hint display ───────────────────────────────────────────────────────
 local function clearHintArrows()
@@ -67,20 +79,113 @@ local function showPathHint(waypoints)
 end
 
 -- ─── Slippery physics ─────────────────────────────────────────────────────────
-local function applySlippery()
-	local char = localPlayer.Character
-	if not char then return end
-	local hum = char:FindFirstChild("Humanoid")
-	if hum then
-		-- Simulate reduced friction via extra force application
-		-- We rely on Roblox's physics; ice material already reduces traction
+local function clearSlippery()
+	isSlippery = false
+	slideVelocity = Vector3.zero
+	if slipperyConn then
+		slipperyConn:Disconnect()
+		slipperyConn = nil
 	end
 end
 
--- ─── Lava damage ──────────────────────────────────────────────────────────────
+local function hasSlipperyMechanic(): boolean
+	if not currentMazeInfo then return false end
+	return table.find(currentMazeInfo.mechanics or {}, "slippery") ~= nil
+end
+
+local function setupSlippery()
+	clearSlippery()
+	if not hasSlipperyMechanic() then return end
+
+	isSlippery = true
+	slipperyConn = RunService.Heartbeat:Connect(function(dt)
+		if not isSlippery or playerZone ~= "maze" then return end
+
+		local char = localPlayer.Character
+		if not char then return end
+		local hrp  = char:FindFirstChild("HumanoidRootPart")
+		local hum  = char:FindFirstChild("Humanoid")
+		if not hrp or not hum or hum.Health <= 0 then return end
+
+		local state = hum:GetState()
+		local grounded = state == Enum.HumanoidStateType.Running
+			or state == Enum.HumanoidStateType.RunningNoPhysics
+			or state == Enum.HumanoidStateType.Landed
+			or state == Enum.HumanoidStateType.Physics
+
+		-- В воздухе — простое затухание, игрок не управляет
+		if not grounded then
+			slideVelocity = slideVelocity * (Constants.SLIPPERY_FRICTION ^ (dt * 60))
+			local vel = hrp.AssemblyLinearVelocity
+			hrp.AssemblyLinearVelocity = Vector3.new(slideVelocity.X, vel.Y, slideVelocity.Z)
+			return
+		end
+
+		local moveDir = hum.MoveDirection
+		local walkSpeed = hum.WalkSpeed
+		local maxSpeed  = walkSpeed * Constants.SLIPPERY_MAX_SPEED_MULT
+
+		-- ── Разложение скорости на продольную и боковую компоненты ──────────
+		-- «Продольная» — вдоль текущего движения, «боковая» — поперёк (занос)
+		local speed = slideVelocity.Magnitude
+		local fwdAxis  -- направление текущего движения
+		if speed > 0.5 then
+			fwdAxis = slideVelocity.Unit
+		else
+			fwdAxis = Vector3.new(moveDir.X, 0, moveDir.Z)
+			if fwdAxis.Magnitude < 0.05 then fwdAxis = Vector3.new(0, 0, 1) end
+			fwdAxis = fwdAxis.Unit
+		end
+
+		local rightAxis = Vector3.new(-fwdAxis.Z, 0, fwdAxis.X)
+
+		-- Проекции текущей скорости
+		local vFwd  = slideVelocity:Dot(fwdAxis)
+		local vSide = slideVelocity:Dot(rightAxis)
+
+		-- ── Ускорение от ввода (только продольное — поперёк не «рулим» напрямую)
+		if moveDir.Magnitude > 0.05 then
+			local inputDir = Vector3.new(moveDir.X, 0, moveDir.Z).Unit
+
+			-- Проекция ввода на ось движения (ускорение вперёд/назад)
+			local accelFwd = inputDir:Dot(fwdAxis) * Constants.SLIPPERY_ACCEL * dt * maxSpeed
+
+			-- Слабый «руль» — очень маленькое боковое ускорение → занос сохраняется
+			local accelSide = inputDir:Dot(rightAxis) * Constants.SLIPPERY_STEER * dt * maxSpeed
+
+			vFwd  = vFwd  + accelFwd
+			vSide = vSide + accelSide
+		end
+
+		-- ── Затухание: боковая компонента тормозит сильнее (занос гасится медленно)
+		local decayFwd  = Constants.SLIPPERY_FRICTION ^ (dt * 60)
+		local decaySide = Constants.SLIPPERY_SIDE_FRICTION ^ (dt * 60)
+
+		vFwd  = vFwd  * decayFwd
+		vSide = vSide * decaySide
+
+		-- ── Сборка вектора и ограничение скорости
+		slideVelocity = fwdAxis * vFwd + rightAxis * vSide
+
+		local hSpeed = slideVelocity.Magnitude
+		if hSpeed > maxSpeed * 1.35 then
+			slideVelocity = slideVelocity.Unit * maxSpeed * 1.35
+		end
+
+		if hSpeed < 0.06 and moveDir.Magnitude < 0.05 then
+			slideVelocity = Vector3.zero
+		end
+
+		local vel = hrp.AssemblyLinearVelocity
+		hrp.AssemblyLinearVelocity = Vector3.new(slideVelocity.X, vel.Y, slideVelocity.Z)
+	end)
+end
+
+-- ─── Lava damage (gradual — one tick at a time, not per-frame stack) ───────────
 local function setupLavaCheck(mazeFolder: Folder)
 	for _, conn in ipairs(lavaConnections) do conn:Disconnect() end
 	lavaConnections = {}
+	lastLavaDamageTime = 0
 
 	local conn = RunService.Heartbeat:Connect(function()
 		local char = localPlayer.Character
@@ -89,13 +194,26 @@ local function setupLavaCheck(mazeFolder: Folder)
 		local hum = char:FindFirstChild("Humanoid")
 		if not hrp or not hum or hum.Health <= 0 then return end
 
+		local now = os.clock()
+		if now - lastLavaDamageTime < Constants.LAVA_DAMAGE_INTERVAL then
+			return
+		end
+
+		local onLava = false
+		local hrpFlat = Vector3.new(hrp.Position.X, 0, hrp.Position.Z)
 		for _, obj in ipairs(mazeFolder:GetDescendants()) do
 			if obj:IsA("BasePart") and obj:FindFirstChild("LavaTag") then
-				local dist = (obj.Position - hrp.Position).Magnitude
-				if dist < Constants.CELL_SIZE * 0.6 then
-					hum:TakeDamage(Constants.LAVA_DAMAGE_PER_SECOND / 30) -- per frame ~30fps
+				local lavaFlat = Vector3.new(obj.Position.X, 0, obj.Position.Z)
+				if (lavaFlat - hrpFlat).Magnitude <= Constants.LAVA_TOUCH_RADIUS then
+					onLava = true
+					break
 				end
 			end
+		end
+
+		if onLava then
+			lastLavaDamageTime = now
+			hum:TakeDamage(Constants.LAVA_DAMAGE_PER_TICK)
 		end
 	end)
 	table.insert(lavaConnections, conn)
@@ -135,17 +253,18 @@ local function startProximityLoop()
 			end
 		end
 
-		-- Checkpoint activation
-		for _, obj in ipairs(mazeFolder:GetDescendants()) do
-			if obj:IsA("BasePart") and obj:FindFirstChild("CheckpointIndex") then
-				local idx = tonumber(obj:FindFirstChild("CheckpointIndex").Value)
-				if idx and not activatedCheckpoints[idx] then
-					local dist = (obj.Position - pos).Magnitude
-					if dist < Constants.CHECKPOINT_ACTIVATE_RADIUS then
-						activatedCheckpoints[idx] = true
-						Remotes:WaitForChild(RemoteDefs.ActivateCheckpoint):FireServer(idx)
-						-- Visual feedback
-						obj.Color = Color3.fromRGB(50, 255, 100)
+		-- Checkpoint activation (dangerous worlds only)
+		if currentMazeInfo.useCheckpoints then
+			for _, obj in ipairs(mazeFolder:GetDescendants()) do
+				if obj:IsA("BasePart") and obj:FindFirstChild("CheckpointIndex") then
+					local idx = tonumber(obj:FindFirstChild("CheckpointIndex").Value)
+					if idx and not activatedCheckpoints[idx] then
+						local dist = (obj.Position - pos).Magnitude
+						if dist < Constants.CHECKPOINT_ACTIVATE_RADIUS then
+							activatedCheckpoints[idx] = true
+							Remotes:WaitForChild(RemoteDefs.ActivateCheckpoint):FireServer(idx)
+							obj.Color = Color3.fromRGB(50, 255, 100)
+						end
 					end
 				end
 			end
@@ -196,6 +315,7 @@ local function onCharacterAdded(char: Model)
 	end)
 
 	startProximityLoop()
+	setupSlippery()
 
 	-- Setup lava check if applicable
 	if currentMazeInfo and table.find(currentMazeInfo.mechanics or {}, "lava") then
@@ -214,7 +334,137 @@ local function requestHint()
 	end
 end
 
--- ─── Lighting / atmosphere (client-side = per-player, multiplayer-safe) ────────
+-- ─── Zone: hub vs maze (multiplayer-safe lighting & visibility) ───────────────
+
+local function getOwnMazeName(): string
+	return "Maze_" .. localPlayer.UserId
+end
+
+local function setInstanceHiddenLocally(inst: Instance, hidden: boolean)
+	if inst:IsA("BasePart") then
+		-- LocalTransparencyModifier is a property on BasePart (client-only), not an Instance
+		inst.LocalTransparencyModifier = hidden and 1 or 0
+	elseif inst:IsA("ParticleEmitter") or inst:IsA("Trail") or inst:IsA("Beam") then
+		inst.Enabled = not hidden
+	elseif inst:IsA("Light") then
+		inst.Enabled = not hidden
+	elseif inst:IsA("BillboardGui") or inst:IsA("SurfaceGui") then
+		inst.Enabled = not hidden
+	end
+end
+
+local function setMazeFolderHidden(folder: Instance, hidden: boolean)
+	for _, desc in folder:GetDescendants() do
+		setInstanceHiddenLocally(desc, hidden)
+	end
+	setInstanceHiddenLocally(folder, hidden)
+end
+
+local function updateMazeVisibility()
+	local mazes = Workspace:FindFirstChild("Mazes")
+	if not mazes then return end
+
+	local inMazeZone = playerZone == "maze"
+	local ownName = getOwnMazeName()
+
+	for _, child in mazes:GetChildren() do
+		local isOwn = child.Name == ownName
+		local hide = not inMazeZone or not isOwn
+		setMazeFolderHidden(child, hide)
+	end
+end
+
+local applyHubLighting
+local applyMazeLighting
+
+local function applyMazeCamera()
+	if savedCameraMode == nil then
+		savedCameraMode = localPlayer.CameraMode
+		savedCameraMinZoom = localPlayer.CameraMinZoomDistance
+		savedCameraMaxZoom = localPlayer.CameraMaxZoomDistance
+	end
+
+	if Constants.MAZE_CAMERA_LOCK_FIRST_PERSON then
+		localPlayer.CameraMode = Enum.CameraMode.LockFirstPerson
+		localPlayer.CameraMinZoomDistance = 0.5
+		localPlayer.CameraMaxZoomDistance = 0.5
+	else
+		localPlayer.CameraMinZoomDistance = Constants.MAZE_CAMERA_MIN_ZOOM
+		localPlayer.CameraMaxZoomDistance = Constants.MAZE_CAMERA_MAX_ZOOM
+	end
+end
+
+local function applyHubCamera()
+	if savedCameraMode ~= nil then
+		localPlayer.CameraMode = savedCameraMode
+		localPlayer.CameraMinZoomDistance = savedCameraMinZoom or 0.5
+		localPlayer.CameraMaxZoomDistance = savedCameraMaxZoom or 128
+		savedCameraMode = nil
+		savedCameraMinZoom = nil
+		savedCameraMaxZoom = nil
+	end
+end
+
+local function applyZoneLighting()
+	if playerZone == "hub" or not currentMazeInfo then
+		applyHubLighting()
+		Logger.debug(TAG, "Zone lighting → hub")
+	else
+		applyMazeLighting(currentMazeInfo)
+		Logger.debug(TAG, "Zone lighting → maze", currentMazeInfo.worldName or "?")
+	end
+end
+
+local function setPlayerZone(zone: "hub" | "maze", reason: string?)
+	if playerZone == zone then
+		updateMazeVisibility()
+		return
+	end
+	playerZone = zone
+	Logger.info(TAG, "Zone changed", zone, reason or "")
+	if zone == "maze" then
+		applyMazeCamera()
+		setupSlippery()
+	else
+		applyHubCamera()
+		clearSlippery()
+	end
+	applyZoneLighting()
+	updateMazeVisibility()
+end
+
+local function updateZoneFromPosition()
+	local char = localPlayer.Character
+	if not char then return end
+	local hrp = char:FindFirstChild("HumanoidRootPart")
+	if not hrp then return end
+
+	local newZone: "hub" | "maze" = hrp.Position.Y >= Constants.MAZE_ZONE_MIN_Y and "maze" or "hub"
+	if newZone ~= playerZone then
+		setPlayerZone(newZone, "position Y=" .. math.floor(hrp.Position.Y))
+	end
+end
+
+local function watchMazeFolder()
+	local mazes = Workspace:WaitForChild("Mazes")
+	updateMazeVisibility()
+	if mazeWatchConn then
+		mazeWatchConn:Disconnect()
+	end
+	mazeWatchConn = mazes.ChildAdded:Connect(function()
+		task.defer(updateMazeVisibility)
+	end)
+end
+
+local function startZoneTracking()
+	if zoneConn then
+		zoneConn:Disconnect()
+	end
+	zoneConn = RunService.Heartbeat:Connect(updateZoneFromPosition)
+	watchMazeFolder()
+end
+
+-- ─── Lighting / atmosphere (per-zone on this client only) ─────────────────────
 local function getAtmosphere(): Atmosphere
 	local Lighting = game:GetService("Lighting")
 	local atmos = Lighting:FindFirstChildOfClass("Atmosphere")
@@ -245,7 +495,7 @@ local HUB_DEFAULTS = {
 	fogColor   = Color3.fromRGB(180, 195, 220),
 }
 
-local function applyHubLighting()
+applyHubLighting = function()
 	local Lighting = game:GetService("Lighting")
 	Lighting.Ambient        = HUB_DEFAULTS.ambient
 	Lighting.OutdoorAmbient = HUB_DEFAULTS.ambient
@@ -264,13 +514,14 @@ local function applyHubLighting()
 	sky.StarCount = 0
 end
 
-local function applyMazeLighting(mazeInfo)
+applyMazeLighting = function(mazeInfo)
 	local Lighting = game:GetService("Lighting")
 	local mechanics = mazeInfo.mechanics or {}
 	local bg = mazeInfo.bg or {}
 	local ambient = mazeInfo.ambient or Color3.fromRGB(150, 150, 150)
 	local hasFog = hasMechanic(mechanics, "fog")
 	local hasDark = hasMechanic(mechanics, "darkness")
+	local isIce = mazeInfo.theme == "ice"
 
 	Lighting.Ambient        = ambient
 	Lighting.OutdoorAmbient = ambient
@@ -293,6 +544,10 @@ local function applyMazeLighting(mazeInfo)
 		atmos.Density = 0.88
 		atmos.Haze    = 3.2
 		atmos.Glare   = 0.05
+	elseif isIce then
+		atmos.Density = 0.52
+		atmos.Haze    = 1.7
+		atmos.Glare   = 0
 	elseif hasDark then
 		atmos.Density = 0.65
 		atmos.Haze    = 1.8
@@ -317,9 +572,16 @@ function MazeController.onMazeLoaded(mazeInfo)
 	foundSecrets = {}
 	clearHintArrows()
 
-	applyMazeLighting(mazeInfo)
+	-- Lighting follows zone — stay on hub look while physically in hub
+	if playerZone == "maze" then
+		applyMazeLighting(mazeInfo)
+	else
+		applyHubLighting()
+	end
+	updateMazeVisibility()
 
 	startProximityLoop()
+	setupSlippery()
 end
 
 function MazeController.onHubEntered()
@@ -328,11 +590,13 @@ function MazeController.onHubEntered()
 	activatedCheckpoints = {}
 	foundSecrets = {}
 	clearHintArrows()
+	clearSlippery()
 	if proximityConn then
 		proximityConn:Disconnect()
 		proximityConn = nil
 	end
-	applyHubLighting()
+
+	setPlayerZone("hub", "HubEntered")
 end
 
 function MazeController.requestHint()
@@ -340,8 +604,14 @@ function MazeController.requestHint()
 end
 
 function MazeController.init()
-	applyHubLighting()
-	localPlayer.CharacterAdded:Connect(onCharacterAdded)
+	setPlayerZone("hub", "init")
+	startZoneTracking()
+	localPlayer.CharacterAdded:Connect(function(char)
+		onCharacterAdded(char)
+		if playerZone == "maze" then
+			task.defer(applyMazeCamera)
+		end
+	end)
 	if localPlayer.Character then
 		onCharacterAdded(localPlayer.Character)
 	end

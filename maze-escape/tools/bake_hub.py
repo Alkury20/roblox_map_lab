@@ -33,12 +33,13 @@ def cf(x: float, y: float, z: float) -> list[float]:
 
 
 def color3uint8(r: int, g: int, b: int) -> dict:
-    # Rojo 7 requires explicit format for Color3uint8
+    # Rojo 7 explicit Color3uint8 (rarely needed)
     return {"Color3uint8": [r, g, b]}
 
 
-def color3(r: int, g: int, b: int) -> dict:
-    return {"Color3": [r / 255, g / 255, b / 255]}
+def color3_rgb(r: int, g: int, b: int) -> list[float]:
+    # Part.Color uses Color3 (0–1), implicit format works in Rojo meta files
+    return [r / 255, g / 255, b / 255]
 
 
 def write_meta(folder: Path, data: dict) -> None:
@@ -63,7 +64,7 @@ def part(
         "Anchored": True,
         "Size": list(size),
         "CFrame": cf(*position),
-        "Color3uint8": color3uint8(*color),
+        "Color": color3_rgb(*color),
         "Material": material,
         "CanCollide": can_collide,
         "TopSurface": "Smooth",
@@ -82,7 +83,7 @@ def spawn_location(position: tuple[float, float, float]) -> dict:
             "Anchored": True,
             "Size": [14, 1, 14],
             "CFrame": cf(*position),
-            "Color3uint8": color3uint8(80, 160, 255),
+            "Color": color3_rgb(80, 160, 255),
             "Material": "Neon",
             "Neutral": True,
             "Duration": 0,
@@ -102,7 +103,7 @@ def point_light(brightness: float, range_: float, color: tuple[int, int, int]) -
         "properties": {
             "Brightness": brightness,
             "Range": range_,
-            "Color": color3(*color),
+            "Color": color3_rgb(*color),
         },
     }
 

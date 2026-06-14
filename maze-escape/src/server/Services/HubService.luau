@@ -23,6 +23,7 @@ local hubFolder: Folder
 local padDebounce: { [number]: number } = {}
 local pendingUnlockWorld: { [number]: number } = {} -- userId -> worldId awaiting Robux purchase
 local wiredPads: { [BasePart]: boolean } = {}
+local wiredBonusPads: { [BasePart]: boolean } = {}
 
 -- ─── Unlock logic ───────────────────────────────────────────────────────────────
 function HubService.isWorldUnlocked(data, worldId: number): boolean
@@ -140,6 +141,154 @@ local function billboard(adornee: BasePart, titleText: string, subText: string, 
 	sub.Parent = bb
 end
 
+local function getBonusIdFromPad(pad: Instance): string?
+	local idVal = pad:FindFirstChild("BonusId")
+	if idVal and idVal:IsA("StringValue") then
+		return idVal.Value
+	end
+	local n = pad.Name:match("^BonusPad_(.+)$")
+	if n and Constants.BONUS_LEVELS[n] then
+		return n
+	end
+	return nil
+end
+
+local BONUS_PAD_COLORS = {
+	circle = Color3.fromRGB(200, 175, 120),
+	endless = Color3.fromRGB(70, 130, 220),
+	star = Color3.fromRGB(140, 90, 200),
+	pentagon = Color3.fromRGB(0, 170, 210),
+	overgrown = Color3.fromRGB(45, 130, 50),
+}
+
+local function ensureBonusPadBillboard(pad: BasePart, bonusId: string)
+	if pad:FindFirstChild("PadInfo") then
+		return
+	end
+	local bonus = Constants.getBonusLevel(bonusId)
+	if not bonus then return end
+	billboard(
+		pad,
+		bonus.icon .. " " .. bonus.name,
+		"🪙 " .. bonus.runCost .. " / run · unlock " .. bonus.unlockCost,
+		Color3.fromRGB(255, 220, 255)
+	)
+end
+
+local function wireBonusPad(pad: BasePart, bonusId: string)
+	if wiredBonusPads[pad] then return end
+	wiredBonusPads[pad] = true
+
+	ensureBonusPadBillboard(pad, bonusId)
+
+	pad.Touched:Connect(function(hit)
+		local character = hit.Parent
+		local player = character and Players:GetPlayerFromCharacter(character)
+		if not player then return end
+
+		local now = os.clock()
+		if padDebounce[player.UserId] and now - padDebounce[player.UserId] < 1.5 then
+			return
+		end
+		padDebounce[player.UserId] = now
+
+		local BonusService = require(script.Parent.BonusService)
+		BonusService.requestBonus(player, bonusId)
+	end)
+end
+
+local function wireBonusPads(parent: Instance)
+	local wired = 0
+	for _, desc in parent:GetDescendants() do
+		if desc:IsA("BasePart") then
+			local bonusId = getBonusIdFromPad(desc)
+			if bonusId and Constants.getBonusLevel(bonusId) then
+				wireBonusPad(desc, bonusId)
+				wired += 1
+			end
+		end
+	end
+	return wired
+end
+
+function HubService.ensureBonusPads()
+	hubFolder = Workspace:FindFirstChild("Hub")
+	if not hubFolder then
+		hubFolder = Instance.new("Folder")
+		hubFolder.Name = "Hub"
+		hubFolder.Parent = Workspace
+	end
+
+	local bonusRoot = hubFolder:FindFirstChild("BonusPads")
+	if not bonusRoot then
+		bonusRoot = Instance.new("Folder")
+		bonusRoot.Name = "BonusPads"
+		bonusRoot.Parent = hubFolder
+	end
+
+	local center = Constants.HUB_CENTER
+
+	if #bonusRoot:GetChildren() == 0 then
+		local signPart = makePart("BonusSign",
+			Vector3.new(50, 10, 2),
+			CFrame.new(center + Vector3.new(0, 14, Constants.HUB_BONUS_PAD_Z - 12)),
+			Color3.fromRGB(35, 25, 55),
+			Enum.Material.SmoothPlastic,
+			bonusRoot)
+		local signGui = Instance.new("SurfaceGui")
+		signGui.Face = Enum.NormalId.Back
+		signGui.CanvasSize = Vector2.new(600, 120)
+		signGui.Parent = signPart
+		local signText = Instance.new("TextLabel")
+		signText.Size = UDim2.new(1, 0, 1, 0)
+		signText.BackgroundTransparency = 1
+		signText.Text = "⭐ БОНУСНЫЕ УРОВНИ"
+		signText.TextColor3 = Color3.fromRGB(220, 180, 255)
+		signText.Font = Enum.Font.GothamBold
+		signText.TextScaled = true
+		signText.Parent = signGui
+
+		local bonusIds = Constants.BONUS_LEVEL_ORDER
+		local spacing = Constants.HUB_BONUS_PAD_SPACING
+		local startX = -((#bonusIds - 1) * spacing) / 2
+		local padZ = center.Z + Constants.HUB_BONUS_PAD_Z
+
+		for i, bonusId in ipairs(bonusIds) do
+			local bonus = Constants.getBonusLevel(bonusId)
+			if bonus then
+				local px = center.X + startX + (i - 1) * spacing
+				local color = BONUS_PAD_COLORS[bonusId] or Color3.fromRGB(140, 80, 200)
+
+				local pad = makePart("BonusPad_" .. bonusId,
+					Vector3.new(14, 1.5, 14),
+					CFrame.new(px, center.Y + 2.75, padZ),
+					color,
+					Enum.Material.Neon,
+					bonusRoot)
+
+				local idVal = Instance.new("StringValue")
+				idVal.Name = "BonusId"
+				idVal.Value = bonusId
+				idVal.Parent = pad
+
+				local beam = makePart("BonusBeam_" .. bonusId,
+					Vector3.new(4, 28, 4),
+					CFrame.new(px, center.Y + 16, padZ),
+					color,
+					Enum.Material.Neon,
+					bonusRoot)
+				beam.Transparency = 0.55
+				beam.CanCollide = false
+			end
+		end
+
+		Logger.info(TAG, "Bonus pads built", "count=" .. #bonusIds)
+	end
+
+	local wired = wireBonusPads(bonusRoot)
+	Logger.info(TAG, "Bonus pads wired", "pads=" .. wired)
+end
+
 local function getWorldIdFromPad(pad: Instance): number?
 	local idVal = pad:FindFirstChild("WorldId")
 	if idVal and idVal:IsA("IntValue") then
@@ -150,9 +299,27 @@ local function getWorldIdFromPad(pad: Instance): number?
 	return nil
 end
 
+local function ensurePadBillboard(pad: BasePart, worldId: number)
+	if pad:FindFirstChild("PadInfo") then
+		return
+	end
+	local world = Constants.WORLDS[worldId]
+	if not world then
+		return
+	end
+	billboard(
+		pad,
+		world.icon .. " " .. world.name,
+		"Unlock: Lv " .. world.unlockLevel,
+		Color3.fromRGB(255, 255, 255)
+	)
+end
+
 local function wireWorldPad(pad: BasePart, worldId: number)
 	if wiredPads[pad] then return end
 	wiredPads[pad] = true
+
+	ensurePadBillboard(pad, worldId)
 
 	pad.Touched:Connect(function(hit)
 		local character = hit.Parent
@@ -209,6 +376,7 @@ local function useCustomHub(): boolean
 	if wired == 0 then
 		Logger.warn(TAG, "No world pads found — add IntValue WorldId (1-7) to touch parts")
 	end
+	wireBonusPads(hubFolder)
 	return true
 end
 
@@ -411,11 +579,6 @@ local function buildHub()
 		beam.Transparency = 0.6
 		beam.CanCollide = false
 
-		billboard(pad,
-			world.icon .. " " .. world.name,
-			"Unlock: Lv " .. world.unlockLevel,
-			Color3.fromRGB(255, 255, 255))
-
 		wireWorldPad(pad, worldId)
 		end
 	end
@@ -425,15 +588,19 @@ end
 
 local function setupHub()
 	wiredPads = {}
+	wiredBonusPads = {}
 	if Constants.USE_CUSTOM_HUB and useCustomHub() then
+		HubService.ensureBonusPads()
 		return
 	end
 	if hubHasLayout() then
 		loadBakedHub()
+		HubService.ensureBonusPads()
 		return
 	end
 	-- Fallback: build at runtime if assets/Hub/Generated is empty
 	buildHub()
+	HubService.ensureBonusPads()
 end
 
 -- ─── World selection ────────────────────────────────────────────────────────────

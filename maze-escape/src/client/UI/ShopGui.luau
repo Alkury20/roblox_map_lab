@@ -8,6 +8,9 @@ local MarketplaceService = game:GetService("MarketplaceService")
 
 local Constants  = require(ReplicatedStorage.Shared.Constants)
 local RemoteDefs = require(ReplicatedStorage.Shared.RemoteDefinitions)
+local Logger     = require(ReplicatedStorage.Shared.Logger)
+
+local TAG = "ShopGui"
 
 local localPlayer = Players.LocalPlayer
 local Remotes     = ReplicatedStorage:WaitForChild("Remotes")
@@ -328,8 +331,13 @@ function ShopGui.refreshItems()
 				actionBtn.BackgroundColor3 = C.Accent
 				actionBtn.TextColor3 = C.TextPrimary
 				actionBtn.MouseButton1Click:Connect(function()
-					Remotes:WaitForChild(RemoteDefs.EquipItem):InvokeServer(item.id, item.category)
-					ShopGui.refreshItems()
+					local ok, msg = Remotes:WaitForChild(RemoteDefs.EquipItem):InvokeServer(item.id, item.category)
+					if ok then
+						Logger.info(TAG, "Equip OK", item.category, item.id, item.name)
+						ShopGui.refreshItems()
+					else
+						Logger.warn(TAG, "Equip failed", item.category, item.id, tostring(msg))
+					end
 				end)
 			end
 		elseif item.gamepass then
@@ -346,7 +354,10 @@ function ShopGui.refreshItems()
 			actionBtn.MouseButton1Click:Connect(function()
 				local success, msg = Remotes:WaitForChild(RemoteDefs.PurchaseItem):InvokeServer(item.id)
 				if success then
+					Logger.info(TAG, "Purchase OK", item.id, item.name, tostring(msg))
 					ShopGui.refreshItems()
+				else
+					Logger.warn(TAG, "Purchase failed", item.id, tostring(msg))
 				end
 			end)
 		end
@@ -376,11 +387,11 @@ function ShopGui.toggle()
 	end
 end
 
--- Called by MainGui when data updates
-ReplicatedStorage:WaitForChild("Remotes")
-	:WaitForChild(require(ReplicatedStorage.Shared.RemoteDefinitions).DataUpdated)
-	.OnClientEvent:Connect(function(data)
+function ShopGui.onDataUpdated(data)
 	currentData = data
-end)
+	if isOpen and guiRefs and guiRefs.overlay then
+		ShopGui.refreshItems()
+	end
+end
 
 return ShopGui

@@ -45,6 +45,11 @@ return {
 	UnlockWorldWithCoins = "UnlockWorldWithCoins", -- RemoteFunction
 	UnlockWorldStudioTest = "UnlockWorldStudioTest", -- RemoteFunction (Studio only)
 
+	-- Bonus levels
+	StartBonusLevel       = "StartBonusLevel",       -- RemoteFunction
+	UnlockBonusLevel      = "UnlockBonusLevel",    -- RemoteFunction
+	UnlockBonusStudioTest = "UnlockBonusStudioTest", -- RemoteFunction (Studio only)
+
 	-- Admin
 	CheckAdmin        = "CheckAdmin",          -- RemoteFunction
 	AdminSetSpeed     = "AdminSetSpeed",       -- RemoteFunction

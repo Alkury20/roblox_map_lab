@@ -173,8 +173,8 @@ local function buildHUD(data)
 
 	-- ── Right panel: action buttons ────────────────────────────────────────────
 	local rightPanel = newFrame(screenGui, "RightPanel",
-		UDim2.new(0, 56, 0, 320),
-		UDim2.new(1, -68, 0.5, -160),
+		UDim2.new(0, 56, 0, 380),
+		UDim2.new(1, -68, 0.5, -190),
 		C.Background, 0.8, 12)
 
 	local layout = Instance.new("UIListLayout")
@@ -207,6 +207,7 @@ local function buildHUD(data)
 	end
 
 	local shopBtn  = sideBtn("ShopBtn",  "🛍️", Color3.fromRGB(60, 100, 200))
+	local bonusBtn = sideBtn("BonusBtn", "⭐", Color3.fromRGB(120, 80, 200))
 	local questBtn = sideBtn("QuestBtn", "📋", Color3.fromRGB(50, 150, 80))
 	local lbBtn    = sideBtn("LBBtn",    "🏆", Color3.fromRGB(180, 130, 20))
 	local hintBtn  = sideBtn("HintBtn",  "🗺️", Color3.fromRGB(80, 80, 120))
@@ -217,6 +218,10 @@ local function buildHUD(data)
 	shopBtn.MouseButton1Click:Connect(function()
 		local ShopGui = require(script.Parent.ShopGui)
 		ShopGui.toggle()
+	end)
+	bonusBtn.MouseButton1Click:Connect(function()
+		local BonusGui = require(script.Parent.BonusGui)
+		BonusGui.toggle()
 	end)
 	questBtn.MouseButton1Click:Connect(function()
 		local QuestGui = require(script.Parent.QuestGui)
@@ -292,9 +297,18 @@ function MainGui.onMazeLoaded(mazeInfo)
 	currentMazeInfo = mazeInfo
 
 	if hudRefs then
-		local worldConfig = Constants.WORLDS[mazeInfo.worldId]
-		if worldConfig then
-			hudRefs.worldLabel.Text = worldConfig.icon .. " " .. worldConfig.name
+		if mazeInfo.isBonus and mazeInfo.bonusId then
+			local bonus = Constants.getBonusLevel(mazeInfo.bonusId)
+			if bonus then
+				hudRefs.worldLabel.Text = bonus.icon .. " " .. bonus.name
+			else
+				hudRefs.worldLabel.Text = "⭐ " .. (mazeInfo.bonusName or "Bonus")
+			end
+		else
+			local worldConfig = Constants.WORLDS[mazeInfo.worldId]
+			if worldConfig then
+				hudRefs.worldLabel.Text = worldConfig.icon .. " " .. worldConfig.name
+			end
 		end
 	end
 

@@ -22,13 +22,11 @@
       0,
       1
     ],
-    "Color3uint8": {
-      "Color3uint8": [
-        45,
-        48,
-        70
-      ]
-    },
+    "Color": [
+      0.17647058823529413,
+      0.18823529411764706,
+      0.27450980392156865
+    ],
     "Material": "SmoothPlastic",
     "CanCollide": true,
     "TopSurface": "Smooth",
