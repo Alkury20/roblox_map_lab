@@ -1,0 +1,37 @@
+{
+  "className": "Part",
+  "properties": {
+    "Name": "HubSign",
+    "Anchored": true,
+    "Size": [
+      60,
+      14,
+      2
+    ],
+    "CFrame": [
+      0,
+      18,
+      74.0,
+      1,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      1
+    ],
+    "Color3uint8": {
+      "Color3uint8": [
+        25,
+        28,
+        45
+      ]
+    },
+    "Material": "SmoothPlastic",
+    "CanCollide": true,
+    "TopSurface": "Smooth",
+    "BottomSurface": "Smooth"
+  }
+}

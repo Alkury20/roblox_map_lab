@@ -1,0 +1,37 @@
+{
+  "className": "Part",
+  "properties": {
+    "Name": "HubWall_W_Trim",
+    "Anchored": true,
+    "Size": [
+      5,
+      1.2,
+      170
+    ],
+    "CFrame": [
+      -82.5,
+      32.6,
+      0,
+      1,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      1
+    ],
+    "Color3uint8": {
+      "Color3uint8": [
+        70,
+        85,
+        130
+      ]
+    },
+    "Material": "Neon",
+    "CanCollide": false,
+    "TopSurface": "Smooth",
+    "BottomSurface": "Smooth"
+  }
+}

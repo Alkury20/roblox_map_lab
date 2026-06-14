@@ -1,0 +1,37 @@
+{
+  "className": "Part",
+  "properties": {
+    "Name": "HubWall_N",
+    "Anchored": true,
+    "Size": [
+      170,
+      32,
+      5
+    ],
+    "CFrame": [
+      0,
+      17.0,
+      -82.5,
+      1,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      1
+    ],
+    "Color3uint8": {
+      "Color3uint8": [
+        32,
+        35,
+        52
+      ]
+    },
+    "Material": "Concrete",
+    "CanCollide": true,
+    "TopSurface": "Smooth",
+    "BottomSurface": "Smooth"
+  }
+}

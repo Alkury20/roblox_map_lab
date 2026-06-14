@@ -1,0 +1,37 @@
+{
+  "className": "Part",
+  "properties": {
+    "Name": "WorldPad_4",
+    "Anchored": true,
+    "Size": [
+      14,
+      1.5,
+      14
+    ],
+    "CFrame": [
+      0.0,
+      2.75,
+      20,
+      1,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      1
+    ],
+    "Color3uint8": {
+      "Color3uint8": [
+        220,
+        60,
+        20
+      ]
+    },
+    "Material": "Neon",
+    "CanCollide": true,
+    "TopSurface": "Smooth",
+    "BottomSurface": "Smooth"
+  }
+}

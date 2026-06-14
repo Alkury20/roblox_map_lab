@@ -1,0 +1,37 @@
+{
+  "className": "Part",
+  "properties": {
+    "Name": "HubPillar",
+    "Anchored": true,
+    "Size": [
+      6,
+      36,
+      6
+    ],
+    "CFrame": [
+      -80.0,
+      19.0,
+      80.0,
+      1,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      1
+    ],
+    "Color3uint8": {
+      "Color3uint8": [
+        70,
+        85,
+        130
+      ]
+    },
+    "Material": "Neon",
+    "CanCollide": true,
+    "TopSurface": "Smooth",
+    "BottomSurface": "Smooth"
+  }
+}

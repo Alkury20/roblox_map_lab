@@ -1,0 +1,38 @@
+{
+  "className": "Part",
+  "properties": {
+    "Name": "PadBeam_7",
+    "Anchored": true,
+    "Size": [
+      4,
+      30,
+      4
+    ],
+    "CFrame": [
+      66.0,
+      17,
+      20,
+      1,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      1
+    ],
+    "Color3uint8": {
+      "Color3uint8": [
+        120,
+        0,
+        180
+      ]
+    },
+    "Material": "Neon",
+    "CanCollide": false,
+    "TopSurface": "Smooth",
+    "BottomSurface": "Smooth",
+    "Transparency": 0.6
+  }
+}

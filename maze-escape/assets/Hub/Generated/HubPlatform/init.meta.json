@@ -1,0 +1,37 @@
+{
+  "className": "Part",
+  "properties": {
+    "Name": "HubPlatform",
+    "Anchored": true,
+    "Size": [
+      160,
+      4,
+      160
+    ],
+    "CFrame": [
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      1
+    ],
+    "Color3uint8": {
+      "Color3uint8": [
+        45,
+        48,
+        70
+      ]
+    },
+    "Material": "SmoothPlastic",
+    "CanCollide": true,
+    "TopSurface": "Smooth",
+    "BottomSurface": "Smooth"
+  }
+}

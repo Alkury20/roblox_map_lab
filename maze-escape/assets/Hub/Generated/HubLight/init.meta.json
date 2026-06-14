@@ -1,0 +1,38 @@
+{
+  "className": "Part",
+  "properties": {
+    "Name": "HubLight",
+    "Anchored": true,
+    "Size": [
+      2,
+      2,
+      2
+    ],
+    "CFrame": [
+      0,
+      30,
+      0,
+      1,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      1
+    ],
+    "Color3uint8": {
+      "Color3uint8": [
+        255,
+        255,
+        255
+      ]
+    },
+    "Material": "Neon",
+    "CanCollide": true,
+    "TopSurface": "Smooth",
+    "BottomSurface": "Smooth",
+    "Transparency": 1
+  }
+}
